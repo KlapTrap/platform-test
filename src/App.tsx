@@ -1,6 +1,11 @@
 import logo from "./logo.svg";
 import styles from "./App.module.css";
 import { onMount } from "solid-js";
+import {
+  ResponsePackage,
+  messageBus,
+  messageSenderRegistry,
+} from "../platform/message-bus/host-message-router";
 
 const handlersMap = new Map<
   string,
@@ -31,24 +36,24 @@ const senMessageToIframe = (
       ? (document.getElementById(iframeOrId) as HTMLIFrameElement)
       : iframeOrId;
   if (iframe) {
-    if (origin) {
-      const target = new URL(iframe.src).origin;
-      iframe.contentWindow?.postMessage(message, target);
-    }
+    const target = new URL(iframe.src).origin;
+    iframe.contentWindow?.postMessage(message, target);
   }
 };
 
 window.addEventListener("message", (event) => {
   const handler = handlersMap.get(event.origin);
   if (!handler) return;
-  handler.forEach(({ handler, iframe }) =>
-    handler(event.data, (data) => senMessageToIframe(iframe, data))
-  );
+  handler.forEach(({ handler, iframe }) => {
+    if (event.source === iframe.contentWindow) {
+      handler(event.data, (data) => senMessageToIframe(iframe, data));
+    }
+  });
 });
 
 function App() {
   onMount(async () => {
-    const iframeMessageHandler = async (
+    const iframeMessageHandler = (
       iframeId: string,
       handler: (data: unknown, respond: (data: unknown) => void) => void
     ) => {
@@ -60,14 +65,34 @@ function App() {
         }
       }
     };
-
-    await iframeMessageHandler("app1", (data) => {
-      console.log(`[host] received message from app1: `, data);
+    messageSenderRegistry.add(
+      document.getElementById("app2") as HTMLIFrameElement
+    );
+    messageSenderRegistry.add(
+      document.getElementById("app3") as HTMLIFrameElement
+    );
+    // Fake handler
+    messageBus.listenToMessages().subscribe((m) => {
+      const claim = Math.random() >= 0.8;
+      if (claim) {
+        const message = m.claim();
+        if (message) {
+          messageBus.push(
+            new ResponsePackage("first handler got you", m, message)
+          );
+        }
+      }
     });
-    await iframeMessageHandler("app2", (data, respond) => {
-      console.error(`[host] received message from app2: `, data);
-      if (Math.random() > 0.5) {
-        respond("hello from host, I got you");
+
+    //Fake handler,
+    messageBus.listenToMessages().subscribe((m) => {
+      if (Math.random() >= 0.5) {
+        const message = m.claim();
+        if (message) {
+          messageBus.push(
+            new ResponsePackage("second handler got you", m, message)
+          );
+        }
       }
     });
   });
@@ -76,6 +101,7 @@ function App() {
     <div class={styles.App}>
       <iframe id="app1" src="http://localhost:3001"></iframe>
       <iframe id="app2" src="http://localhost:3002"></iframe>
+      <iframe id="app3" src="http://localhost:3002"></iframe>
       <button onClick={() => senMessageToIframe("app2", "hello")}>Send</button>
     </div>
   );

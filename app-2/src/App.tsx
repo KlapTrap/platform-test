@@ -3,18 +3,21 @@ import styles from "./App.module.css";
 import { createSignal } from "solid-js";
 
 const waiting = new Map<number, (res: { id: number; data: unknown }) => void>();
+const [message, setMessage] = createSignal(0);
+const [responsesCount, setResponsesCount] = createSignal(0);
 
 const buildSender = () => {
   let id = 0;
   return {
     send: (message: string, responseHandler?: (data: unknown) => void) => {
+      setMessage((prev) => prev + 1);
       window.parent.postMessage({ message, id }, "*");
       if (responseHandler) {
         const timeout = setTimeout(() => {
           console.log(`timeout for message ${id}`);
           waiting.delete(id);
         }, 5000);
-        waiting.set(id, ({ data }) => {
+        waiting.set(id, (data) => {
           clearTimeout(timeout);
           waiting.delete(id);
           responseHandler(data);
@@ -26,34 +29,27 @@ const buildSender = () => {
 };
 const sender = buildSender();
 const sendPostMessage = (message: string) => {
-  sender.send(message, (data) => console.log(`response received ${data}`));
+  sender.send(message, (data) => console.log(`response received`, data));
 };
 
 setInterval(() => {
-  sendPostMessage("Hello from app 2");
+  if (Math.random() > 0.3) sendPostMessage("Hello from app 2");
 }, 1000);
 
-const [message, setMessage] = createSignal(0);
-
 window.addEventListener("message", (event) => {
-  console.log("app2 received message: ", event.data);
-  setMessage((prev) => prev + 1);
+  if (waiting.has(event.data.id)) {
+    waiting.get(event.data.id)?.(event.data);
+    setResponsesCount((prev) => prev + 1);
+  }
 });
 
 function App() {
   return (
     <div class={styles.App}>
+      App 2
       <header class={styles.header}>
-        <img src={logo} class={styles.logo} alt="logo" />
-        {message()}
-        <a
-          class={styles.link}
-          href="https://github.com/solidjs/solid"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn Solid
-        </a>
+        <div>Messages sent: {message()}</div>
+        <div>Responses received: {responsesCount()}</div>
       </header>
     </div>
   );
